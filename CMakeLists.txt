@@ -19,10 +19,23 @@ project(ReXGlue
 # Build Options
 #==========================================================
 option(REXGLUE_BUILD_TESTS       "Build PPC instruction and unit tests" OFF)
+option(REXGLUE_BUILD_SWITCH_LINK_PROBE "Link the Switch SDK host without game code" OFF)
+option(REXGLUE_BUILD_SWITCH_THREAD_SMOKE "Build a libnx NRO testing core thread primitives" OFF)
 option(REXGLUE_ENABLE_SANITIZERS "Enable UndefinedBehaviorSanitizer" OFF)
 option(REXGLUE_ENABLE_FIDELITYFX "Enable optional AMD FidelityFX integration (experimental)" OFF)
 option(REXGLUE_ENABLE_TRACY                "Enable Tracy profiler integration" ON)
 option(REXGLUE_ENABLE_PERF_COUNTERS        "Enable lightweight perf counter registry and overlay" ON)
+# A title project can consume this SDK with add_subdirectory() under the
+# devkitPro Switch toolchain without setting an extra platform option.
+if(CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
+    set(_rexglue_switch_default ON)
+else()
+    set(_rexglue_switch_default OFF)
+endif()
+option(REXGLUE_PLATFORM_SWITCH "Build the runtime for Nintendo Switch homebrew" ${_rexglue_switch_default})
+if(REXGLUE_PLATFORM_SWITCH AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
+    message(FATAL_ERROR "The Switch runtime requires the devkitPro Switch toolchain")
+endif()
 # Propagate profiling defines globally (compiled out in Release)
 if(REXGLUE_ENABLE_TRACY)
     add_compile_definitions($<$<NOT:$<CONFIG:Release>>:REXGLUE_ENABLE_PROFILING>)
@@ -34,7 +47,10 @@ endif()
 # Graphics backend selection
 # D3D12: Windows only, ON by default.
 # Vulkan: Cross-platform, ON by default on Linux, OFF by default on Windows.
-if(WIN32)
+if(REXGLUE_PLATFORM_SWITCH)
+    set(REXGLUE_USE_D3D12 OFF)
+    option(REXGLUE_USE_VULKAN "Enable Vulkan graphics backend" ON)
+elseif(WIN32)
     option(REXGLUE_USE_D3D12  "Enable D3D12 graphics backend" ON)
     option(REXGLUE_USE_VULKAN "Enable Vulkan graphics backend" OFF)
 else()
@@ -54,11 +70,15 @@ endif()
 
 # Root of the SDK source tree
 set(REXGLUE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+set(REXGLUE_SHARE_DIR "${REXGLUE_ROOT}/src/ui")
 
 # SDK install support
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/rexglue_helpers.cmake)
+if(REXGLUE_PLATFORM_SWITCH)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/rexglue_switch_nro.cmake)
+endif()
 
 if(UNIX AND NOT APPLE)
     # Keep installed binaries self-contained by resolving shared libs relative
@@ -79,8 +99,12 @@ elseif(APPLE)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 endif()
 
-# Enforce a Clang toolchain (LLVM Clang or Apple's Clang)
-if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Apple)?Clang$")
+# Desktop builds require Clang. devkitA64 currently provides GCC for Switch.
+if(REXGLUE_PLATFORM_SWITCH)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
+        message(FATAL_ERROR "Switch builds require devkitA64 GCC or AArch64 Clang")
+    endif()
+elseif(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Apple)?Clang$")
     message(FATAL_ERROR "ReXGlue requires the Clang compiler (LLVM Clang or AppleClang). Please set CMAKE_CXX_COMPILER to clang++")
 endif()
 
@@ -131,12 +155,14 @@ endif()
 # Global compile options
 add_compile_options(
     -fno-strict-aliasing
-    -ffp-model=strict
+    $<$<NOT:$<CXX_COMPILER_ID:GNU>>:-ffp-model=strict>
+    $<$<CXX_COMPILER_ID:GNU>:-frounding-math>
+    $<$<CXX_COMPILER_ID:GNU>:-ffp-contract=off>
     $<$<CONFIG:DEBUG>:-g>
     $<$<CONFIG:DEBUG>:-O0>
     $<$<CONFIG:RELEASE>:-O3>
     $<$<CONFIG:RELEASE>:-DNDEBUG>
-    -fno-char8_t
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-char8_t>
 )
 
 # Platform detection (supports AMD64 and ARM64)
@@ -149,7 +175,15 @@ if(APPLE AND CMAKE_OSX_ARCHITECTURES)
     list(GET CMAKE_OSX_ARCHITECTURES 0 REX_TARGET_PROCESSOR)
 endif()
 
-if(WIN32)
+if(REXGLUE_PLATFORM_SWITCH)
+    if(NOT REX_TARGET_PROCESSOR MATCHES "aarch64|ARM64|arm64")
+        message(FATAL_ERROR "Switch builds require an AArch64 target")
+    endif()
+    set(REX_PLATFORM "switch-arm64")
+    # newlib's tm has no tm_gmtoff; ask spdlog to omit that optional feature.
+    add_compile_definitions(REX_PLATFORM_SWITCH=1 SPDLOG_NO_TZ_OFFSET
+        VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL=0 _GNU_SOURCE)
+elseif(WIN32)
     if(REX_TARGET_PROCESSOR MATCHES "AMD64|x86_64")
         set(REX_PLATFORM "win-amd64")
     elseif(REX_TARGET_PROCESSOR MATCHES "aarch64|ARM64|arm64")
@@ -222,10 +256,16 @@ configure_file(
     @ONLY
 )
 
-# Output directories (multi-config appends /<Config>/ automatically)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${REXGLUE_ROOT}/out/${REX_PLATFORM}")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${REXGLUE_ROOT}/out/${REX_PLATFORM}")
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${REXGLUE_ROOT}/out/${REX_PLATFORM}")
+# Keep Switch artifacts in the consumer's build tree when this SDK is a submodule.
+# Desktop retains its existing source-tree layout for compatibility.
+if(REXGLUE_PLATFORM_SWITCH)
+    set(_rexglue_output_root "${CMAKE_CURRENT_BINARY_DIR}/out/${REX_PLATFORM}")
+else()
+    set(_rexglue_output_root "${REXGLUE_ROOT}/out/${REX_PLATFORM}")
+endif()
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${_rexglue_output_root}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${_rexglue_output_root}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${_rexglue_output_root}")
 
 # Sanitizer support for debugging memory corruption and undefined behavior
 if(REXGLUE_ENABLE_SANITIZERS)
@@ -238,6 +278,37 @@ endif()
 if(REXGLUE_BUILD_TESTS)
     list(APPEND CMAKE_MODULE_PATH "${REXGLUE_ROOT}/cmake")
     list(APPEND CMAKE_MODULE_PATH "${REXGLUE_ROOT}/thirdparty/catch2/extras")
+endif()
+
+# glslang generates headers with a host Python interpreter while CMake is
+# otherwise cross-compiling. Look outside the target sysroot first. devkitPro
+# MSYS2 on Windows may omit Windows Python from PATH, so check its standard
+# per-user install directory without baking a developer path into this repo.
+if(REXGLUE_PLATFORM_SWITCH AND NOT PYTHON_EXECUTABLE)
+    find_program(_rexglue_host_python NAMES python3 python python.exe
+        NO_CMAKE_FIND_ROOT_PATH)
+    if(NOT _rexglue_host_python AND DEFINED ENV{LOCALAPPDATA})
+        string(REPLACE "\\" "/" _rexglue_local_app_data "$ENV{LOCALAPPDATA}")
+        if(_rexglue_local_app_data MATCHES "^[A-Za-z]:/")
+            # MSYS paths use /c/... while LOCALAPPDATA is a Windows C:\ path.
+            string(SUBSTRING "${_rexglue_local_app_data}" 0 1 _rexglue_drive)
+            string(TOLOWER "${_rexglue_drive}" _rexglue_drive)
+            string(SUBSTRING "${_rexglue_local_app_data}" 2 -1 _rexglue_path_tail)
+            set(_rexglue_local_app_data "/${_rexglue_drive}${_rexglue_path_tail}")
+        endif()
+        file(GLOB _rexglue_windows_python
+            "${_rexglue_local_app_data}/Programs/Python/Python*/python.exe")
+        if(_rexglue_windows_python)
+            list(SORT _rexglue_windows_python COMPARE NATURAL ORDER DESCENDING)
+            list(GET _rexglue_windows_python 0 _rexglue_host_python)
+        endif()
+    endif()
+    if(NOT _rexglue_host_python)
+        message(FATAL_ERROR
+            "Switch build needs host Python 3 for glslang. Install it or pass -DPYTHON_EXECUTABLE=<host python>.")
+    endif()
+    set(PYTHON_EXECUTABLE "${_rexglue_host_python}" CACHE FILEPATH
+        "Host Python for build-time code generation")
 endif()
 
 # Third-party dependencies (vendored sources only)
@@ -259,8 +330,18 @@ add_subdirectory(src/audio)
 add_subdirectory(src/graphics)
 add_subdirectory(src/system)
 add_subdirectory(src/kernel)
-add_subdirectory(src/codegen)
-add_subdirectory(src/rexglue)
+if(REXGLUE_PLATFORM_SWITCH AND REXGLUE_BUILD_SWITCH_LINK_PROBE AND PROJECT_IS_TOP_LEVEL)
+    add_subdirectory(switch/tests/link-probe)
+endif()
+if(REXGLUE_PLATFORM_SWITCH AND REXGLUE_BUILD_SWITCH_THREAD_SMOKE AND PROJECT_IS_TOP_LEVEL)
+    add_subdirectory(switch/tests/thread-smoke)
+endif()
+if(NOT REXGLUE_PLATFORM_SWITCH)
+    # Code generation runs on the developer's PC. Never build those tools as
+    # AArch64 NRO code or pull their dependencies into a title's cross build.
+    add_subdirectory(src/codegen)
+    add_subdirectory(src/rexglue)
+endif()
 
 # Add tests subdirectory if tests are enabled
 if(REXGLUE_BUILD_TESTS)
@@ -287,8 +368,10 @@ message(STATUS "===========================================")
 
 # SDK install/export rules (skipped when consumed as a subdirectory)
 if(PROJECT_IS_TOP_LEVEL)
-    include(cmake/rexglue_devenv.cmake)
-    include(cmake/rexglue_install.cmake)
+    if(NOT REXGLUE_PLATFORM_SWITCH)
+        include(cmake/rexglue_devenv.cmake)
+        include(cmake/rexglue_install.cmake)
+    endif()
 else()
     # When consumed via add_subdirectory(), provide the same interface as find_package().
     # This sets REXGLUE_SHARE_DIR and makes rexglue_configure_target() available.

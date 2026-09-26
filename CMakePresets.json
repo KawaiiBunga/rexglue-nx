@@ -139,9 +139,40 @@
             "displayName": "macOS ARM64",
             "description": "Multi-config build for macOS ARM64 using Clang",
             "inherits": "mac-arm64-base"
+        },
+        {
+            "name": "switch-release",
+            "displayName": "Nintendo Switch runtime",
+            "description": "devkitPro Switch SDK static runtime; build a title through add_subdirectory() to package its NRO",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/switch-release",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "$env{DEVKITPRO}/cmake/Switch.cmake",
+                "CMAKE_BUILD_TYPE": "Release",
+                "REXGLUE_PLATFORM_SWITCH": "ON",
+                "REXGLUE_BUILD_SWITCH_LINK_PROBE": "ON",
+                "REXGLUE_BUILD_SWITCH_THREAD_SMOKE": "ON",
+                "REXGLUE_ENABLE_TRACY": "OFF",
+                "REXGLUE_ENABLE_PERF_COUNTERS": "OFF"
+            }
         }
     ],
     "buildPresets": [
+        {
+            "name": "switch-runtime",
+            "configurePreset": "switch-release",
+            "targets": ["rexruntime", "rexgpu-xenos"]
+        },
+        {
+            "name": "switch-link-probe",
+            "configurePreset": "switch-release",
+            "targets": ["rexglue_switch_link_probe"]
+        },
+        {
+            "name": "switch-thread-smoke",
+            "configurePreset": "switch-release",
+            "targets": ["rexglue_switch_thread_smoke"]
+        },
         {
             "name": "win-amd64-debug",
             "configurePreset": "win-amd64",

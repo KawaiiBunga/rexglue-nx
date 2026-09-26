@@ -1,7 +1,8 @@
 #include <rex/platform.h>
 #include <rex/thread/atomic.h>
 
-static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only");
+static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC || REX_PLATFORM_SWITCH,
+              "This file requires GCC-compatible atomics");
 
 namespace rex::thread {
 

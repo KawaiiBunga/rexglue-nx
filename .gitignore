@@ -419,3 +419,34 @@ FodyWeavers.xsd
 
 # CMake User Overrides
 CMakeUserPresets.json
+
+# Private Switch port work and user-supplied Xbox 360 data.
+/research/
+/private/
+/ai-docs/
+/internal/
+/reference-checkouts/
+/user-game-files/
+/game-dumps/
+/game-files/
+/targets/*/private/
+/targets/*/generated/
+/targets/*/reports/
+**/private-game-files/
+**/game-dump/
+**/default.xex
+**/*.xexp
+**/*.iso
+**/*.god
+**/*.cci
+**/*.zxs
+**/*.nsp
+**/*.xci
+**/*.xcp
+*.nro
+*.nacp
+*.dmp
+/switch/smoke/build/
+/switch/smoke/*.elf
+/build/
+/switch/smoke/README.md

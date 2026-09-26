@@ -64,7 +64,9 @@ if(REXGLUE_USE_D3D12)
 endif()
 
 # Platform-specific sources (windowing itself is SDL3, platform-independent)
-if(WIN32)
+if(REXGLUE_PLATFORM_SWITCH)
+    set(REXUI_PLATFORM_SOURCES)
+elseif(WIN32)
     set(REXUI_PLATFORM_SOURCES
         surface_win.cpp
     )
@@ -173,4 +175,3 @@ endif()
 if(REXGLUE_USE_D3D12)
     target_link_libraries(rexui PUBLIC dxc-headers)
 endif()
-

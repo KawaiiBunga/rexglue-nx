@@ -124,9 +124,14 @@ target_include_directories(aes128 PUBLIC
 # Suppress warnings in third-party C code
 target_compile_options(aes128 PRIVATE -w)
 
-# libmspack - LZX decompression (only lzxd.c needed for XEX decompression)
-# Uses cabextract version which has all needed headers in one place
-set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/cabextract/mspack")
+# libmspack - LZX decompression (only lzxd.c needed for XEX decompression).
+# Git on Windows may check cabextract's symlinks out as text files. Switch
+# builds use the real source and headers directly, keeping the submodule clean.
+if(REXGLUE_PLATFORM_SWITCH)
+    set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/libmspack/mspack")
+else()
+    set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/cabextract/mspack")
+endif()
 add_library(mspack STATIC
     ${MSPACK_DIR}/lzxd.c
 )
@@ -301,7 +306,19 @@ if(UNIX AND NOT APPLE)
     set(SDL_PIPEWIRE_SHARED   ON  CACHE BOOL "" FORCE)
 endif()
 
-add_subdirectory(sdl3)
+if(REXGLUE_PLATFORM_SWITCH)
+    include("${REXGLUE_ROOT}/cmake/rexglue_switch_sdl.cmake")
+    rexglue_prepare_switch_sdl(_rexglue_sdl_source)
+    set(SDL_SWITCH_EXTERNAL_GRAPHICS ON CACHE BOOL "" FORCE)
+else()
+    set(_rexglue_sdl_source "${CMAKE_CURRENT_SOURCE_DIR}/sdl3")
+endif()
+add_subdirectory("${_rexglue_sdl_source}" "${CMAKE_CURRENT_BINARY_DIR}/sdl3")
+if(REXGLUE_PLATFORM_SWITCH)
+    # CMake emits SDL's absolute PCH include without shell quoting; Windows
+    # workspaces containing spaces then fail before any SDL source compiles.
+    set_target_properties(SDL3-static PROPERTIES DISABLE_PRECOMPILE_HEADERS ON)
+endif()
 
 #=============================================================================
 # DXC API headers (vendored from DirectXShaderCompiler, runtime-loaded)
@@ -336,10 +353,23 @@ if(REXGLUE_USE_VULKAN)
     set(SKIP_GLSLANG_INSTALL ON CACHE BOOL "" FORCE)
     # Enable RTTI for spv::Builder inheritance in SpirvBuilder
     set(ENABLE_RTTI ON CACHE BOOL "" FORCE)
+    if(REXGLUE_PLATFORM_SWITCH)
+        # glslang's generated PCH includes an unquoted absolute source path.
+        set(ENABLE_PCH OFF CACHE BOOL "" FORCE)
+    endif()
 
     # Set policy minimum for older glslang versions with outdated cmake_minimum_required
     set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+    if(REXGLUE_PLATFORM_SWITCH)
+        # glslang classifies only WIN32/UNIX and otherwise omits its TLS
+        # implementation. Horizon's newlib/pthread layer uses the Unix one.
+        set(_rexglue_glslang_previous_unix "${UNIX}")
+        set(UNIX TRUE)
+    endif()
     add_subdirectory(glslang)
+    if(REXGLUE_PLATFORM_SWITCH)
+        set(UNIX "${_rexglue_glslang_previous_unix}")
+    endif()
     # Create alias for older glslang versions that don't provide it
     if(NOT TARGET glslang::SPIRV)
         add_library(glslang::SPIRV ALIAS SPIRV)
@@ -407,6 +437,11 @@ endif()
 # FFmpeg - Audio/video codec library (for XMA decoding)
 # Only builds libavutil and libavcodec needed for WMA Pro decoding
 #=============================================================================
+
+if(REXGLUE_PLATFORM_SWITCH)
+    include(${REXGLUE_ROOT}/cmake/rexglue_switch_ffmpeg.cmake)
+    rexglue_prepare_switch_ffmpeg(REXGLUE_SWITCH_FFMPEG_SOURCE)
+else()
 
 set(FFMPEG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/FFmpeg")
 
@@ -702,3 +737,4 @@ set_target_properties(libavutil libavcodec PROPERTIES
     C_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON
     FOLDER "FFmpeg")
+endif()

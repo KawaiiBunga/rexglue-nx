@@ -47,7 +47,15 @@ class DynamicLibrary {
 
 namespace lib_names {
 
-#if REX_PLATFORM_WIN32
+#if REX_PLATFORM_SWITCH
+
+// Horizon homebrew links these facilities statically. Call sites requiring
+// them must use platform registration instead of DynamicLibrary::Load.
+inline constexpr const char* kVulkanLoader = "";
+inline constexpr const char* kRenderDoc = "";
+inline constexpr const char* kSpirvToolsSdkPath = "";
+
+#elif REX_PLATFORM_WIN32
 
 inline constexpr const char* kVulkanLoader = "vulkan-1.dll";
 inline constexpr const char* kRenderDoc = "renderdoc.dll";

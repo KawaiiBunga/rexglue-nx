@@ -96,7 +96,11 @@ if(REXGLUE_USE_D3D12)
         ${REXGPU_XENOS_D3D12_SOURCES})
 endif()
 
-add_library(rexgpu-xenos SHARED ${REXGPU_XENOS_SOURCES})
+if(REXGLUE_PLATFORM_SWITCH)
+    add_library(rexgpu-xenos STATIC ${REXGPU_XENOS_SOURCES})
+else()
+    add_library(rexgpu-xenos SHARED ${REXGPU_XENOS_SOURCES})
+endif()
 add_library(rex::gpu-xenos ALIAS rexgpu-xenos)
 
 set_target_properties(rexgpu-xenos PROPERTIES
