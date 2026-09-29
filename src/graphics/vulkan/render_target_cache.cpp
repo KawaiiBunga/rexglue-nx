@@ -2128,6 +2128,11 @@ void VulkanRenderTargetCache::GetEdramBufferUsageMasks(EdramBufferUsage usage,
       break;
     default:
       assert_unhandled_case(usage);
+      // Assertions are compiled out in release builds. A conservative
+      // barrier is safer than using uninitialized Vulkan access masks.
+      stage_mask_out = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+      access_mask_out = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+      break;
   }
 }
 
