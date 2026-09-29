@@ -12,7 +12,8 @@
 #include <rex/platform.h>
 #include <rex/platform/env.h>
 
-static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only");
+static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC || REX_PLATFORM_SWITCH,
+              "This file requires libc environment functions");
 
 #include <cstdlib>
 #include <string>

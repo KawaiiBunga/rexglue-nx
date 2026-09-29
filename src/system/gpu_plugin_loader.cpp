@@ -24,6 +24,33 @@
 
 namespace rex::system {
 
+#if REX_PLATFORM_SWITCH
+
+// Switch NROs cannot load the desktop GPU shared library. The game target
+// links rexgpu-xenos and its factory into the executable instead.
+extern "C" uint32_t rex_gpu_abi_version(void);
+extern "C" IGraphicsSystem* rex_gpu_create(uint32_t, const GpuCreateInfo*);
+
+std::unique_ptr<IGraphicsSystem> LoadGpuPlugin(std::string_view name, std::string_view backend) {
+  if (name != "xenos") {
+    REXSYS_ERROR("GPU plugin '{}' is not linked into this Switch build", name);
+    return nullptr;
+  }
+  if (rex_gpu_abi_version() != kGpuPluginAbiVersion) {
+    REXSYS_ERROR("Linked Xenos GPU plugin ABI mismatch");
+    return nullptr;
+  }
+  std::string backend_str(backend);
+  GpuCreateInfo info{sizeof(GpuCreateInfo), backend_str.c_str()};
+  auto* graphics_system = rex_gpu_create(kGpuPluginAbiVersion, &info);
+  if (!graphics_system) {
+    REXSYS_ERROR("Linked Xenos GPU plugin could not create backend '{}'", backend_str);
+  }
+  return std::unique_ptr<IGraphicsSystem>(graphics_system);
+}
+
+#else
+
 namespace {
 
 // Plugin binaries follow the SDK's per-config postfix convention; this TU is
@@ -101,5 +128,7 @@ std::unique_ptr<IGraphicsSystem> LoadGpuPlugin(std::string_view name, std::strin
   REXSYS_DEBUG("GPU plugin '{}' loaded ({})", name, path.filename().string());
   return std::unique_ptr<IGraphicsSystem>(graphics_system);
 }
+
+#endif  // REX_PLATFORM_SWITCH
 
 }  // namespace rex::system

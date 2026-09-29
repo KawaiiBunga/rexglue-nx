@@ -37,7 +37,7 @@
 
 // macOS off_t is 64-bit with no *64 large-file variants; Linux keeps the
 // explicit *64 forms for legacy 32-bit off_t distributions.
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(__SWITCH__)
 using rex_off64_t = off_t;
 #define rex_fseeko64 fseeko
 #define rex_ftello64 ftello
@@ -70,7 +70,10 @@ std::filesystem::path to_path(const std::u16string_view source) {
 namespace filesystem {
 
 std::filesystem::path GetExecutablePath() {
-#if defined(__APPLE__)
+#if defined(__SWITCH__)
+  // Homebrew NRO contents are mounted under romfs by the application host.
+  return "romfs:/switch.nro";
+#elif defined(__APPLE__)
   // Darwin has no /proc; query the executable path via the dyld API. The first
   // call reports the required buffer size.
   uint32_t executable_path_size = 0;
@@ -104,6 +107,9 @@ std::filesystem::path GetExecutableFolder() {
 }
 
 std::filesystem::path GetUserFolder() {
+#if defined(__SWITCH__)
+  return "sdmc:/switch/rexglue";
+#else
   // get preferred data home
   if (auto xdg = rex::platform::env::get("XDG_DATA_HOME")) {
     return std::filesystem::path(*xdg);
@@ -121,6 +127,7 @@ std::filesystem::path GetUserFolder() {
   getpwuid_r(getuid(), &pw1, buf, sizeof(buf), &pw);
   assert(&pw1 == pw);  // sanity check
   return std::filesystem::path(pw->pw_dir) / ".local" / "share";
+#endif
 }
 
 FILE* OpenFile(const std::filesystem::path& path, const std::string_view mode) {
@@ -154,20 +161,13 @@ bool TruncateStdioFile(FILE* file, uint64_t length) {
   return true;
 }
 
-static int removeCallback(const char* fpath, const struct stat* sb, int typeflag,
-                          struct FTW* ftwbuf) {
-  int rv = remove(fpath);
-  return rv;
-}
-
 static uint64_t convertUnixtimeToWinFiletime(time_t unixtime) {
   // Linux uses number of seconds since 1/1/1970, and Windows uses
   // number of nanoseconds since 1/1/1601
   // so we convert linux time to nanoseconds and then add the number of
   // nanoseconds from 1601 to 1970
   // see https://msdn.microsoft.com/en-us/library/ms724228
-  uint64_t filetime = filetime = (unixtime * 10000000) + 116444736000000000;
-  return filetime;
+  return static_cast<uint64_t>(unixtime) * 10000000ull + 116444736000000000ull;
 }
 
 bool CreateEmptyFile(const std::filesystem::path& path) {

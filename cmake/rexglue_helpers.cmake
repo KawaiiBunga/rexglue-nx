@@ -45,6 +45,17 @@ endfunction()
 # runtime DLL staging is the host's job (see rexglue_configure_target).
 #==========================================================
 function(rexglue_apply_target_settings target_name)
+    if(REXGLUE_PLATFORM_SWITCH)
+        # add_subdirectory() does not propagate the SDK directory's compiler
+        # settings back to the parent game target.
+        target_compile_features(${target_name} PRIVATE cxx_std_23)
+        target_compile_definitions(${target_name} PRIVATE
+            REX_PLATFORM_SWITCH=1 SPDLOG_NO_TZ_OFFSET
+            VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL=0 _GNU_SOURCE)
+        target_compile_options(${target_name} PRIVATE
+            -fno-strict-aliasing -frounding-math -ffp-contract=off
+            $<$<COMPILE_LANGUAGE:CXX>:-fno-char8_t>)
+    endif()
     if(UNIX AND NOT APPLE)
         # Large executable support
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
@@ -80,6 +91,13 @@ function(rexglue_configure_target target_name)
     target_sources(${target_name} PRIVATE
         ${REXGLUE_SHARE_DIR}/windowed_app_main_sdl.cpp
         ${REXGLUE_SHARE_DIR}/rex_app.cpp)
+
+    if(REXGLUE_PLATFORM_SWITCH)
+        # rex_app.cpp includes ImGui headers. Keep its object library linked
+        # through rexruntime only; adding it here would duplicate definitions.
+        target_include_directories(${target_name} PRIVATE
+            $<TARGET_PROPERTY:imgui::imgui,INTERFACE_INCLUDE_DIRECTORIES>)
+    endif()
 
     target_compile_definitions(${target_name} PRIVATE
         REXGLUE_BUILD_CONFIG="$<CONFIG>")
@@ -142,8 +160,8 @@ function(rexglue_configure_target target_name)
         endforeach()
     endif()
 
-    # Stage requested GPU emulation plugins next to the executable. Plugins
-    # are runtime-loaded (never linked), so TARGET_RUNTIME_DLLS misses them.
+    # Switch links requested GPU plugins into the NRO. Desktop stages shared
+    # plugins next to the executable for runtime loading.
     foreach(_plugin IN LISTS ARG_GPU_PLUGINS)
         if(TARGET rexgpu-${_plugin})
             # In-tree build: depend on it so it gets built.
@@ -157,12 +175,16 @@ function(rexglue_configure_target target_name)
                 "rexglue_configure_target: unknown GPU plugin '${_plugin}' "
                 "(no target rexgpu-${_plugin} or rex::gpu-${_plugin})")
         endif()
-        add_custom_command(TARGET ${target_name} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:${_plugin_target}>
-                $<TARGET_FILE_DIR:${target_name}>
-            VERBATIM
-        )
+        if(REXGLUE_PLATFORM_SWITCH)
+            target_link_libraries(${target_name} PRIVATE ${_plugin_target})
+        else()
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:${_plugin_target}>
+                    $<TARGET_FILE_DIR:${target_name}>
+                VERBATIM
+            )
+        endif()
         unset(_plugin_target)
     endforeach()
 

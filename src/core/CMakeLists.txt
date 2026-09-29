@@ -33,7 +33,18 @@ if(APPLE)
 endif()
 
 # Platform-specific sources
-if(WIN32)
+if(REXGLUE_PLATFORM_SWITCH)
+    # Keep portable compiler/libc implementations, but use Horizon-specific
+    # implementations for services whose POSIX versions require Linux signals,
+    # /proc, or memory mapping semantics unavailable in libnx.
+    target_sources(rexcore PRIVATE
+        atomic_posix.cpp
+        clock_switch.cpp
+        filesystem_posix.cpp
+        math_gcc.cpp
+        platform/env_posix.cpp
+    )
+elseif(WIN32)
     target_sources(rexcore PRIVATE
         atomic_win.cpp
         clock_win.cpp

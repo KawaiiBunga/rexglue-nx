@@ -40,17 +40,38 @@ inline uint64_t decode_fat_timestamp(const uint32_t date, const uint32_t time) {
   tm.tm_sec = (0x001F & time) << 1;  // the value stored in 2-seconds intervals
   tm.tm_isdst = 0;
 
-#if REX_PLATFORM_WIN32
-  time_t timet = _mkgmtime(&tm);
-#else
-  time_t timet = timegm(&tm);
-#endif
-
-  if (timet == -1) {
+#if REX_PLATFORM_SWITCH
+  // newlib on Horizon has no timegm. Convert the FAT UTC date directly,
+  // without changing the process timezone or allocating platform state.
+  const int year = tm.tm_year + 1900;
+  const unsigned month = static_cast<unsigned>(tm.tm_mon + 1);
+  const unsigned day = static_cast<unsigned>(tm.tm_mday);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
     return 0;
   }
+  const int adjusted_year = year - (month <= 2);
+  const int era = adjusted_year / 400;
+  const unsigned year_of_era = static_cast<unsigned>(adjusted_year - era * 400);
+  const unsigned month_from_march =
+      static_cast<unsigned>(static_cast<int>(month) + (month > 2 ? -3 : 9));
+  const unsigned day_of_year = (153 * month_from_march + 2) / 5 + day - 1;
+  const unsigned year_of_era_day =
+      year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+  const int64_t days_since_1970 = era * 146097 + year_of_era_day - 719468;
+  const int64_t unix_seconds =
+      days_since_1970 * 86400 + tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec;
+#else
+#if REX_PLATFORM_WIN32
+  const time_t unix_seconds = _mkgmtime(&tm);
+#else
+  const time_t unix_seconds = timegm(&tm);
+#endif
+  if (unix_seconds == -1) {
+    return 0;
+  }
+#endif
   // 11644473600LL is a difference between 1970 and 1601
-  return (timet + 11644473600LL) * 10000000;
+  return (unix_seconds + 11644473600LL) * 10000000;
 }
 
 // Structs used for interchange between Xenia and actual Xbox360 kernel/XAM
