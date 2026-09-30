@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <iterator>
 #include <mutex>
@@ -2927,6 +2928,26 @@ void VulkanCommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontb
   // End the frame even if did not present for any reason (the image refresher
   // was not called), to prevent leaking per-frame resources.
   EndSubmission(true);
+  if (!REXCVAR_GET(dump_shaders).empty()) {
+    static uint32_t diagnostic_frame = 0;
+    ++diagnostic_frame;
+    if (diagnostic_frame <= 7200 && diagnostic_frame % 300 == 0) {
+      ui::RawImage image;
+      if (presenter->CaptureGuestOutput(image)) {
+        auto path = std::filesystem::path(REXCVAR_GET(dump_shaders)) /
+                    ("frame-" + std::to_string(diagnostic_frame) + ".ppm");
+        if (FILE* f = std::fopen(path.string().c_str(), "wb")) {
+          std::fprintf(f, "P6\n%u %u\n255\n", image.width, image.height);
+          for (uint32_t y = 0; y < image.height; ++y) {
+            for (uint32_t x = 0; x < image.width; ++x) {
+              std::fwrite(image.data.data() + y * image.stride + x * 4, 1, 3, f);
+            }
+          }
+          std::fclose(f);
+        }
+      }
+    }
+  }
 }
 
 bool VulkanCommandProcessor::PushBufferMemoryBarrier(

@@ -127,7 +127,7 @@ target_compile_options(aes128 PRIVATE -w)
 # libmspack - LZX decompression (only lzxd.c needed for XEX decompression).
 # Git on Windows may check cabextract's symlinks out as text files. Switch
 # builds use the real source and headers directly, keeping the submodule clean.
-if(REXGLUE_PLATFORM_SWITCH)
+if(REXGLUE_PLATFORM_SWITCH OR WIN32)
     set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/libmspack/mspack")
 else()
     set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/cabextract/mspack")

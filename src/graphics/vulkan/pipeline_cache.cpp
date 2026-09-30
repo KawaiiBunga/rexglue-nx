@@ -1242,6 +1242,9 @@ bool VulkanPipelineCache::TranslateAnalyzedShader(SpirvShaderTranslator& transla
     REXGPU_ERROR("Shader {:016X} translation failed; marking as ignored", shader.ucode_data_hash());
     return false;
   }
+  if (!REXCVAR_GET(dump_shaders).empty()) {
+    translation.Dump(REXCVAR_GET(dump_shaders), "vulkan");
+  }
   if (translation.GetOrCreateShaderModule() == VK_NULL_HANDLE) {
     return false;
   }
